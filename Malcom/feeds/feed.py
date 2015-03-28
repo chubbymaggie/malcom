@@ -1,5 +1,12 @@
-import os, sys, time, threading, urllib2
+import os
+import sys
+import time
+import threading
+import urllib2
+import bson
+
 from datetime import timedelta, datetime
+
 from multiprocessing import Process
 from lxml import etree
 
@@ -45,34 +52,35 @@ class Feed(object):
 				 'enabled': self.enabled,
 				}
 
-	def update_xml(self, main_node, children):
+	def update_xml(self, main_node, children, headers={}):
 		assert self.source != None
 
-		feed = urllib2.urlopen(self.source)
-		self.status = "OK"
+		request = urllib2.Request(self.source, headers=headers)
+		feed = urllib2.urlopen(request)
 		tree = etree.parse(feed)
-		for item in tree.findall("//%s"%main_node):
-			dict = {}
-			for field in children:
-				dict[field] = item.findtext(field)
 
-			result = self.analyze(dict)
-			if result != None:
-				elt, evil = result
-				self.commit_to_db(elt, evil)
-
-	def update_lines(self):
-		assert self.source != None
-		feed = urllib2.urlopen(self.source).readlines()
 		self.status = "OK"
-		
-		for line in feed:	
-			result = self.analyze(line)
-			if result != None:
-				elt, evil = result
-				self.commit_to_db(elt, evil)
 
-		return True
+		for item in tree.findall("//%s"%main_node):
+			evil = {}
+			for field in children:
+				evil[field] = item.findtext(field)
+
+			evil['source'] = self.name
+
+			yield evil
+
+
+	def update_lines(self, headers={}):
+		assert self.source != None
+		request = urllib2.Request(self.source, headers=headers)
+		feed = urllib2.urlopen(request).readlines()
+
+		self.status = "OK"
+
+		for line in feed:
+			yield line
+
 
 	def update(self):
 		"""
@@ -87,29 +95,23 @@ class Feed(object):
 	def analyze(self):
 		raise NotImplementedError("analyze: This method must be implemented in your feed class")
 
-	def commit_to_db(self, element, evil, attribs="", testing=False):
+	def commit_to_db(self, element, testing=False):
 		if self.testing:
-			print "%s <%s>" % (element['value'], evil['value'])
+			# print "Evil node: %s" % (element['value'])
+			# print "Data:"
+			# print bson.json_util.dumps(element['evil'], sort_keys=True, indent=4, separators=(',', ':'))
 			self.elements_fetched +=1
 			return
-		
-		if 'evil' not in element['tags']: element['tags'] += ['evil'] # add an 'evil' tag if it was not specified in the feed
+
+		# add an 'evil' tag if it was not specified in the feed
+		if 'evil' not in element['tags']: element['tags'] += ['evil']
 
 		element, new = self.model.save(element, with_status=True)
 		if new:
 			self.elements_fetched += 1
-		
-		# ensure this is set
-		assert self.source != None and self.description != None
-		# evil['source'] = self.source
-		# evil['description'] = self.description
-		evil['feed'] = self.name
 
-		evil, new = self.model.save(evil, with_status=True)
-		if new:
-			self.elements_fetched += 1
+		return element
 
-		self.model.connect(element, evil, attribs)
 
 	def run(self):
 
@@ -120,16 +122,17 @@ class Feed(object):
 
 		# REDIS send messages to webserver
 		# self.analytics.notify_progress("Feeding")
-		try:
-			t0 = datetime.now()
-			self.update()
-			t1 = datetime.now()
-			print "Feed %s added in %s" %(self.name, str(t1-t0))
-			# save time for record in db
-			self.model.feed_last_run(self.name)
-		except Exception, e:
-	 		self.status = "ERROR: %s" % e
-		
+		# try:
+		t0 = datetime.now()
+		self.update()
+		t1 = datetime.now()
+		print "Feed %s added in %s" %(self.name, str(t1-t0))
+		# save time for record in db
+		self.model.feed_last_run(self.name)
+		# except Exception, e:
+	 # 		self.status = "ERROR: %s" % e
+	 # 		raise ValueError
+
 		self.running = False
 
 
@@ -183,7 +186,7 @@ class FeedEngine(Process):
 		for t in self.threads:
 			if self.threads[t].is_alive():
 				self.threads[t].join()
-		
+
 
 	def run(self):
 		self.messenger = FeedsMessenger(self)
@@ -196,18 +199,18 @@ class FeedEngine(Process):
 				time.sleep(self.period) # run a new thread every period seconds
 			except KeyboardInterrupt, e:
 				self.shutdown = True
-			
+
 
 
 	def load_feeds(self, activated_feeds):
-	
+
 		globals_, locals_ = globals(), locals()
 
 		feeds_dir = self.configuration['FEEDS_DIR']
 		package_name = 'feeds'
 
 		debug_output("Loading feeds in %s" % feeds_dir)
-		
+
 		for filename in os.listdir(feeds_dir):
 			export_names = []
 			export_classes = []
@@ -221,16 +224,16 @@ class FeedEngine(Process):
 
 				names = [name for name in modict if name[0] != '_']
 				for n in names:
-					
+
 					# print n, activated_feeds
 					if n == 'Feed' or n.lower() not in activated_feeds:
 						continue
-				
+
 					class_n = modict.get(n)
-					
+
 					if issubclass(class_n, Feed) and class_n not in globals_:
 						new_feed = class_n(n) # create new feed object
-						
+
 						new_feed.model = self.model # attach model instance to feed
 						self.feeds[n] = new_feed
 
@@ -247,7 +250,7 @@ class FeedEngine(Process):
 			name = status['name']
 			self.feeds[name].last_run = status['last_run']
 			self.feeds[name].next_run = status['last_run'] + self.feeds[name].run_every
-				
+
 
 		globals_.update((export_names[i], c) for i, c in enumerate(export_classes))
 

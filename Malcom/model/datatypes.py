@@ -1,4 +1,6 @@
 import datetime, os, sys
+from Malcom.auxiliary.toolbox import debug_output
+import Malcom.auxiliary.toolbox as toolbox
 
 try:
 	import geoip2.database
@@ -7,23 +9,24 @@ try:
 	geoip_reader = geoip2.database.Reader(current_path+'/../auxiliary/geoIP/GeoIP2-City.mmdb')
 	geoip = True
 except Exception, e:
-	sys.stderr.write("[-] Could not load GeoIP library - %s" % e)
+	debug_output("Could not load GeoIP library - %s" % e, type='error')
 	geoip = False
 
-import Malcom.auxiliary.toolbox as toolbox
-from Malcom.auxiliary.toolbox import debug_output
+
+
 
 
 class Element(dict):
 
-	default_fields = [('value', "Value"), ('type', "Type"), ('tags', "Tags"), ('date_updated', 'Updated'), ('date_created', 'Created'), ('last_analysis', 'Analyzed') ]	
-	
+	default_fields = [('value', "Value"), ('type', "Type"), ('tags', "Tags"), ('date_updated', 'Updated'), ('date_created', 'Created'), ('last_analysis', 'Analyzed') ]
+
 	def __init__(self):
 		self['tags'] = []
 		self['value'] = None
 		self['type'] = None
 		self['refresh_period'] = None
-		
+		self['evil'] = {}
+
 	def to_dict(self):
 		return self.__dict__
 
@@ -41,12 +44,27 @@ class Element(dict):
 	def __getstate__(self): return self.__dict__
 	def __setstate__(self, d): self.__dict__.update(d)
 
+	def add_evil(self, evil):
+		if not self.get('evil'):
+			self['evil'] = {}
+
+		if not evil.get('id'):
+			raise ValueError("Evil info does not have a unique ID:\n{}".format(evil))
+		if not evil.get('source'):
+			raise ValueError("Evil info does not have a source:\n{}".format(evil))
+		if not evil.get('description'):
+			raise ValueError("Evil info does not have a description:\n{}".format(evil))
+
+		if not evil.get('date_added'):
+			evil['date_added'] = datetime.datetime.utcnow()
+
+		self['evil'][evil['id']] = evil
 
 class File(Element):
-	
+
 	display_fields = Element.default_fields + [('md5', "MD5"), ('file_type', "Type")]
 	default_refresh_period = None
-	
+
 	def __init__(self, value='', type='file', tags=[]):
 		super(File, self).__init__()
 		self['value'] = value
@@ -73,8 +91,8 @@ class File(Element):
 
 
 class Evil(Element):
-	
-	display_fields = Element.default_fields + [('link', 'Link'), ('guid', 'GUID')]
+
+	display_fields = Element.default_fields + [('link', 'Link'), ('guid', 'GUID'), ('description', 'Description')]
 	default_refresh_period = None
 
 	def __init__(self, value='', type="evil", tags=[]):
@@ -93,20 +111,23 @@ class Evil(Element):
 
 	def analytics(self):
 		self['last_analysis'] = datetime.datetime.utcnow()
-		
+
 		# analysis does not change with time
 		self['next_analysis'] = None
 		return []
 
 
 class As(Element):
-	display_fields = Element.default_fields + [
-										('name', 'Name'),
-										('ISP', 'ISP'),
-										#('domain', 'Domain'), 
-										('asn', 'ASN'),
-										('country', 'Country'),
-										]
+
+	element_fields = [
+						('name', 'Name'),
+						('ISP', 'ISP'),
+						#('domain', 'Domain'),
+						('asn', 'ASN'),
+						('country', 'Country'),
+						]
+
+	display_fields = Element.default_fields + element_fields
 	default_refresh_period = None
 
 	def __init__(self, _as="", tags=[]):
@@ -135,11 +156,12 @@ class As(Element):
 
 
 class Url(Element):
-	display_fields = Element.default_fields + [
-							('scheme', 'Scheme'),
-							('hostname', 'Hostname'),
-							('path', 'Path'),
-							]
+	element_fields = [
+						('scheme', 'Scheme'),
+						('hostname', 'Hostname'),
+						('path', 'Path'),
+						]
+	display_fields = Element.default_fields + element_fields
 	default_refresh_period = None
 
 	def __init__(self, url="", tags=[]):
@@ -154,7 +176,7 @@ class Url(Element):
 		url = Url()
 		for key in d:
 			url[key] = d[key]
-		return url 
+		return url
 
 	def analytics(self):
 		debug_output("(url analytics for %s)" % self['value'])
@@ -192,10 +214,10 @@ class Url(Element):
 
 
 class Ip(Element):
-	
+
 	default_refresh_period = 3*24*3600
 
-	display_fields = Element.default_fields + [
+	element_fields= [
 						('city', 'City'),
 						('postal_code', "ZIP code"),
 						('bgp', 'BGP'),
@@ -218,6 +240,8 @@ class Ip(Element):
 						#'type',
 						]
 
+	display_fields = Element.default_fields + element_fields
+
 	def __init__(self, ip="", tags=[]):
 		super(Ip, self).__init__()
 		self['value'] = ip
@@ -226,8 +250,8 @@ class Ip(Element):
 		# refresh IP geolocation every 72hours
 		if ip != '':
 			self.location_info()
-		
-		self['refresh_period'] = Ip.default_refresh_period			
+
+		self['refresh_period'] = Ip.default_refresh_period
 
 	@staticmethod
 	def from_dict(d):
@@ -237,7 +261,7 @@ class Ip(Element):
 
 		ip.location_info()
 		return ip
-			
+
 
 	def analytics(self):
 		debug_output( "(ip analytics for %s)" % self['value'])
@@ -255,12 +279,12 @@ class Ip(Element):
 		return new
 
 	def location_info(self):
-	
+
 		# get geolocation info (v2)
 		if geoip:
 			try:
 				geoinfo = geoip_reader.city(self.value)
-				
+
 				self['city'] = geoinfo.city.name
 				self['postal_code'] = geoinfo.postal.code
 				self['time_zone'] = geoinfo.location.time_zone
@@ -274,10 +298,12 @@ class Ip(Element):
 
 
 class Hostname(Element):
-	
+
 	default_refresh_period = 6*60*60 # 6 hours
-	# default_refresh_period = 10*60 # 10 minutes
-	display_fields = Element.default_fields + []
+
+	element_fields = []
+
+	display_fields = Element.default_fields + element_fields
 
 	def __init__(self, hostname="", tags=[]):
 		super(Hostname, self).__init__()
@@ -299,26 +325,32 @@ class Hostname(Element):
 		h = Hostname()
 		for key in d:
 			h[key] = d[key]
-		return h 
+		return h
 
 	def analytics(self):
 
 		debug_output( "(host analytics for %s)" % self.value)
 
 		new = []
-		
-		dns_info = toolbox.dns_get_records(self.value)
+
+		# only resolve A and CNAME records for subdomains
+		if toolbox.is_subdomain(self.value):
+			dns_info = toolbox.dns_get_records(self.value, ['A', 'CNAME'])
+		else:
+			dns_info = toolbox.dns_get_records(self.value)
+
 		for rtype in dns_info:
-			for entry in dns_info[rtype]:
-				art = toolbox.find_artifacts(entry)
-				for t in art:
-					for findings in art[t]:
-						if t == 'hostnames':
-							new.append((rtype, Hostname(findings)))
-						if t == 'urls':
-							new.append((rtype, Url(findings)))
-						if t == 'ips':
-							new.append((rtype, Ip(findings)))
+				for entry in dns_info[rtype]:
+					art = toolbox.find_artifacts(entry)
+					for t in art:
+						for findings in art[t]:
+							if t == 'hostnames':
+								new.append((rtype, Hostname(findings)))
+							if t == 'urls':
+								new.append((rtype, Url(findings)))
+							if t == 'ips':
+								new.append((rtype, Ip(findings)))
+
 
 		# is _hostname a subdomain ?
 		if len(self.value.split(".")) > 2:

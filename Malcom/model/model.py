@@ -39,7 +39,7 @@ class Model:
 		self._connection = MongoClient()
 		self._db = self._connection.malcom
 		self._db.add_son_manipulator(Transform())
-		
+
 		# collections
 		self.elements = self._db.elements
 		self.graph = self._db.graph
@@ -47,7 +47,7 @@ class Model:
 		self.feeds = self._db.feeds
 		self.history = self._db.history
 		self.um = UserManager()
-		
+
 		# create indexes
 		self.rebuild_indexes()
 
@@ -88,8 +88,8 @@ class Model:
 					break
 				except Exception, e:
 					debug_output("Could not find connection from %s: %s" %(ObjectId(src._id), e), 'error')
-			
-			
+
+
 			# if the connection already exists, just modify attributes and last seen time
 			if conn:
 				if attribs != "": conn['attribs'] = attribs
@@ -104,7 +104,7 @@ class Model:
 				conn['first_seen'] = datetime.datetime.utcnow()
 				conn['last_seen'] = datetime.datetime.utcnow()
 				debug_output("(linked %s to %s [%s])" % (str(src._id), str(dst._id), attribs), type='model')
-			
+
 			if commit:
 				while True:
 					try:
@@ -135,78 +135,50 @@ class Model:
 				except Exception, e:
 					debug_output(e, type='error')
 					pass
-		
+
 	def find_one(self, oid):
 		return self.elements.find_one(oid)
 
 	def find_neighbors(self, query, include_original=True):
-		
-		total_nodes = {}
-		total_edges = {}
-		final_query = []
+		"""Gets neighbors for all elements matching query"""
 
-		for key in query:
+		# Get original elements
+		elts = self.elements.find(query)
 
-			if key == '_id': 
-				values = [ObjectId(v) for v in query[key]]
-			else:
-				values = [v for v in query[key]]
+		# find neighbors for elements
+		total_nodes, total_edges = self._multi_get_neighbors(elts, include_original=include_original)
 
-			final_query.append({key: {'$in': values}})
-
-		elts = self.elements.find({'$and': final_query})
-		
-		nodes, edges = self.get_neighbors_id(elts, include_original=include_original)
-		for n in nodes:
-			total_nodes[n['_id']] = n
-		for e in edges:
-			total_edges[e['_id']] = e
-			
-		total_nodes = [total_nodes[n] for n in total_nodes]	
-		total_edges = [total_edges[e] for e in total_edges]
-
-		# display 
+		# Add display fields
 		for e in total_nodes:
 			e['fields'] = e.display_fields
 
 		data = {'nodes': total_nodes, 'edges': total_edges }
-
 		return data
 
-	def get_neighbors_id(self, elts, query={}, include_original=True):
+	def _multi_get_neighbors(self, elts, query={}, include_original=True):
+		"""
+		Function used by find_neighbors to get all unique neighbors for
+		a given list of elements
+		"""
 
 		original_ids = [e['_id'] for e in elts]
 
-		new_edges = self.graph.find({'$or': [
-				{'src': {'$in': original_ids}}, {'dst': {'$in': original_ids}}
-			]})
-		_new_edges = self.graph.find({'$or': [
-				{'src': {'$in': original_ids}}, {'dst': {'$in': original_ids}}
-			]})
+		new_edges  = list(self.graph.find({'$or': [
+						{'src': {'$in': original_ids}}, {'dst': {'$in': original_ids}}
+					]}))
 
-
-		ids = {}
-
-		for e in _new_edges:
-			ids[e['src']] = e['src']
-			ids[e['dst']] = e['dst']
-
-		ids = [i for i in ids]
+		ids = set()
+		for e in new_edges:
+			ids.add(e['src'])
+			ids.add(e['dst'])
 
 		if include_original:
-			q = {'$and': [{'_id': {'$in': ids}}, query]}
-			original = {'$or': [q, {'_id': {'$in': original_ids}}]}
-			new_nodes = self.elements.find(original)
-		else:
-			new_nodes = self.elements.find({'$and': [{'_id': {'$in': ids}}, query]})
+			ids = ids | set(original_ids)
 
-		new_nodes = [n for n in new_nodes]
-		new_edges = [e for e in new_edges]
-		
+		new_nodes = list(self.elements.find({'$and': [{'_id': {'$in': list(ids)}}, query]}))
 		return new_nodes, new_edges
-			
 
-	def get_neighbors_elt(self, elt, query={}, include_original=True):
+	def get_neighbors(self, elt, query={}, include_original=True):
 
 		if not elt:
 			return [], []
@@ -222,7 +194,7 @@ class Model:
 		for e in self.graph.find({'dst': elt['_id']}):
 			d_new_edges[e['_id']] = e
 			d_ids[e['src']] = e['src']
-		
+
 
 		# get all IDs of the new nodes that have been discovered
 		ids = [d_ids[i] for i in d_ids]
@@ -231,7 +203,7 @@ class Model:
 		nodes = {}
 		for node in self.elements.find( {'$and' : [{ "_id" : { '$in' : ids }}, query]}):
 			nodes[node['_id']] = node
-		
+
 		# get incoming links (node weight)
 		destinations = [d_new_edges[e]['dst'] for e in d_new_edges]
 		for n in nodes:
@@ -244,7 +216,7 @@ class Model:
 			d_new_edges[e['_id']] = e
 		for e in self.graph.find({'dst': { '$in': nodes_id }}):
 			d_new_edges[e['_id']] = e
-		
+
 		# create arrays
 		new_edges = [d_new_edges[e] for e in d_new_edges]
 
@@ -253,7 +225,7 @@ class Model:
 		else:
 			nodes = [nodes[n] for n in nodes]
 
-		# display 
+		# display
 		for e in nodes:
 			e['fields'] = e.display_fields
 
@@ -262,29 +234,29 @@ class Model:
 	def single_graph_find(self, elt, query, depth=2):
 		chosen_nodes = []
 		chosen_links = []
-		
+
 		if depth > 0:
 			# get a node's neighbors
-			neighbors_n, neighbors_l = self.get_neighbors_elt(elt, include_original=False)
-			
+			neighbors_n, neighbors_l = self.get_neighbors(elt, include_original=False)
+
 			for i, node in enumerate(neighbors_n):
 				# for each node, find evil (recursion)
 				en, el = self.single_graph_find(node, query, depth=depth-1)
-				
+
 				# if we found evil nodes, add them to the chosen_nodes list
 				if len(en) > 0:
 					chosen_nodes += [n for n in en if n not in chosen_nodes] + [node]
 					chosen_links += [l for l in el if l not in chosen_links] + [neighbors_l[i]]
 		else:
-			
+
 			# if recursion ends, then search for evil neighbors
-			neighbors_n, neighbors_l = self.get_neighbors_elt(elt, {query['key']: {'$in': [query['value']]}}, include_original=False)
-			
+			neighbors_n, neighbors_l = self.get_neighbors(elt, {query['key']: {'$in': [query['value']]}}, include_original=False)
+
 			# return evil neighbors if found
 			if len(neighbors_n) > 0:
 				chosen_nodes += [n for n in neighbors_n if n not in chosen_nodes]
 				chosen_links += [l for l in neighbors_l if l not in chosen_links]
-				
+
 			# if not, return nothing
 			else:
 				chosen_nodes = []
@@ -299,19 +271,19 @@ class Model:
 		for key in query:
 
 			for value in query[key]:
-				
+
 				if key == '_id': value = ObjectId(value)
 
 				elt = self.elements.find_one({key: value})
-				
+
 				nodes, edges = self.single_graph_find(elt, graph_query, depth)
-				
+
 				for n in nodes:
 					total_nodes[n['_id']] = n
 				for e in edges:
 					total_edges[e['_id']] = e
-			
-		total_nodes = [total_nodes[n] for n in total_nodes]	
+
+		total_nodes = [total_nodes[n] for n in total_nodes]
 		total_edges = [total_edges[e] for e in total_edges]
 
 		data = {'nodes': total_nodes, 'edges': total_edges }
@@ -325,15 +297,20 @@ class Model:
 			raise ValueError("Invalid value for element: %s" % element)
 
 		with self.db_lock:
+
 			# critical section starts here
 			tags = []
+			evil = {}
 			if 'tags' in element:
 				tags = element['tags']
 				del element['tags'] 	# so tags in the db do not get overwritten
+			if 'evil' in element:
+				evil = element['evil']
+				del element['evil']
 
 			if '_id' in element:
 				del element['_id']
-			
+
 			# check if existing
 			while True:
 				try:
@@ -341,19 +318,20 @@ class Model:
 					break
 				except Exception, e:
 					debug_output("Could not fetch %s: %s" %(element['value'], e), 'error')
-			
+
 			if _element != None:
 				for key in element:
 					if key=='tags': continue
 					_element[key] = element[key]
-				if key not in _element:
-					_element[key] = {}
-				_element['tags'] = list(set(_element['tags'] + tags))
+				_element['tags'] = [t.strip().lower() for t in list(set(_element['tags'] + tags))]
+				if evil != {}:
+					_element['evil'] = dict(_element['evil'].items() + evil.items())
 				element = _element
 				new = False
 			else:
 				new = True
 				element['tags'] = tags
+				element['evil'] = evil
 
 			if not new:
 				debug_output("(updated %s %s)" % (element.type, element.value), type='model')
@@ -362,7 +340,10 @@ class Model:
 				debug_output("(added %s %s)" % (element.type, element.value), type='model')
 				element['date_created'] = datetime.datetime.utcnow()
 				element['next_analysis'] = datetime.datetime.utcnow()
-			
+
+			# tags are all lowercased and stripped
+			element['tags'] = [t.lower().strip() for t in element['tags']]
+
 			while True:
 				try:
 					self.elements.save(element)
@@ -373,7 +354,7 @@ class Model:
 					debug_output("Could not save %s: %s (%s)" % (element, e, type(e)), 'error')
 
 			# end of critical section
-			
+
 		assert element['date_created'] != None
 
 		if not with_status:
@@ -385,30 +366,31 @@ class Model:
 
 		added = []
 		for t in text:
-			elt = None
-			if t.strip() != "":
-				if is_url(t):
-					elt = Url(is_url(t), [])
-				elif is_ip(t):
-					elt = Ip(is_ip(t), [])
-				elif is_hostname(t):
-					elt = Hostname(is_hostname(t), [])
-				if elt:
-					elt['tags'] = tags
-					added.append(self.save(elt))
-						
+			if t:
+				elt = None
+				if t.strip() != "":
+					if is_url(t):
+						elt = Url(is_url(t), [])
+					elif is_ip(t):
+						elt = Ip(is_ip(t), [])
+					elif is_hostname(t):
+						elt = Hostname(is_hostname(t), [])
+					if elt:
+						elt['tags'] = tags
+						added.append(self.save(elt))
+
 		if len(added) == 1:
 			return added[0]
 		else:
 			return added
-		
+
 
 	# ---- remove operations ----
 
 	def remove_element(self, element):
 		self.remove_connections(element['_id'])
 		return self.elements.remove({'_id' : element['_id']})
-		
+
 	def remove_by_id(self, element_id):
 		self.remove_connections(ObjectId(element_id))
 		return self.elements.remove({'_id' : ObjectId(element_id)})
@@ -437,7 +419,7 @@ class Model:
 
 
 
-	
+
 
 
 
@@ -498,11 +480,11 @@ class Model:
 
 		session_list = list(self.sniffer_sessions.find(filter, skip=page, limit=max, sort=[('date_created', pymongo.DESCENDING)]))
 		return session_list
-		
+
 	def del_sniffer_session(self, session, sniffer_dir):
-			
+
 		filename = session.pcap_filename
-				
+
 		try:
 			os.remove(sniffer_dir + "/" + filename)
 		except Exception, e:
@@ -512,7 +494,7 @@ class Model:
 
 		return True
 
-	
+
 
 
 
@@ -524,7 +506,7 @@ class Model:
 
 	def add_feed(self, feed):
 		elts = feed.get_info()
-	  
+
 		for e in elts:
 			self.malware_add(e,e['tags'])
 
@@ -535,7 +517,7 @@ class Model:
 		feeds = [f for f in self.feeds.find({'name': {'$in': feed_names}})]
 		return feeds
 
-	
+
 
 
 

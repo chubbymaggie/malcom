@@ -5,15 +5,15 @@
 activated = true
 listen_interface = 0.0.0.0
 listen_port = 8080
-auth = false 
+auth = false
 
 [feeds]
-activated = false
-feeds_dir = feeds 
+activated = true
+feeds_dir = feeds
 scheduler = false
 
 [analytics]
-activated = true 
+activated = true
 max_workers = 12
 
 [sniffer]
@@ -36,28 +36,17 @@ port = 27017
 # You can comment / uncomment feeds
 # according to if you want to use
 # them or not
-# 
-# AlienvaultIP
-# DShield16276
-# DShield3215
-# DShieldSuspiciousDomainsLow
-# DShieldSuspiciousDomainsMedium
-# MalwareDomains
-DShieldSuspiciousDomainsHigh
-MalcodeBinaries
+
+AsproxTracker
 CybercrimeTracker
-MDLHosts
-MDLTracker
-OpenblIP
+FeodoTracker
+MalcodeBinaries
+MalwaredRu
+MalwareTrafficAnalysis
+MalwareDomainList
 PalevoTracker
-SiriUrzVX
-SpyEyeBinaries
-SpyEyeTracker
-SpyEyeConfigs
-SpyEyeDropzones
 TorExitNodes
-UrlQuery
+ZeusTrackerBinaries
 ZeusTrackerConfigs
 ZeusTrackerDropzones
-ZeusGameOverDomains
-ZeusTrackerBinaries
+

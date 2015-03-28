@@ -1,12 +1,5 @@
 /* sniffer */
 
-#PayloadModal {
-	left:10%;
-	top:10%;
-	margin:0;
-	width:80%;
-}
-
 #PayloadModal .modal-body pre {
 	font-size: small;
 	font-family: "Courier New";
@@ -39,15 +32,20 @@ img.ssl-smiley {
 	margin-left:15px;
 }
 
+#PayloadModal pre {
+	border-radius: 0px;
+
+}
+
 
 /* Flow table */
 
 .http_response_200 {
-	background-color: rgba(75,144,216,0.2);	
+	background-color: rgba(75,144,216,0.2);
 }
 
 .http_response_200:hover {
-	background-color: rgba(75,144,216,0.7);	
+	background-color: rgba(75,144,216,0.7);
 }
 
 .dns_response_OK {
@@ -61,6 +59,10 @@ img.ssl-smiley {
 
 
 /* Dataset */
+
+.tab-pane {
+	margin-top:20px;
+}
 
 .timestamp {
 	width:130px;
@@ -120,25 +122,16 @@ tr.success .error-cause {
 
 /* HTML */
 
-.container {
-	width:95%;
-}
-
 .toolbar {
 	float:right;
-}
-
-.span3 {
-	margin-left:20px;
-	width:280px;
 }
 
 .icon-remove {
 	cursor: pointer;
 }
 
-.toolbar .tab-content {
-	overflow: visible;
+.tab-content {
+	overflow: auto;
 }
 
 input[type="file"] {
@@ -148,22 +141,85 @@ input[type="file"] {
 
 div.data {
 	float:right;
-	font-size: 12px;
-	font-family: "Helvetica Neue",Helvetica,Arial,sans-serif
+}
+
+/* search */
+
+.center-block {
+	text-align: center;
+}
+
+.search .searchbar {
+	margin: 0 auto;
+	margin-bottom: 10px;
+}
+
+.search input[type=submit] {
+	width:auto;
+}
+
+.search .alert {
+	margin-bottom:10px;
+}
+
+/* main */
+
+.toggle-control {
+	cursor: pointer;
+}
+
+.toggle-hidden {
+	display: none;
+}
+
+/* to re-align smaller checkboxes */
+input[type=checkbox], input[type=radio] {
+	margin: 2px 0 0;
+}
+
+@media (min-width: 1200px) {
+	.container.main {
+		width: 100%;
+		margin-top:10px;
+	}
+	.container {
+		width: 95%;
+	}
+}
+
+p.divider {
+	border-top:1px solid #ddd;
 }
 
 body .main {
 	font-size: 12px;
-	font-family: "Helvetica Neue",Helvetica,Arial,sans-serif
+	margin-bottom:70px;
 }
 
-table th {
-	text-align: right;
+/* footer */
+
+body {
+  /* Margin bottom by footer height */
+  margin-bottom: 30px;
 }
 
-table td {
-	text-align: left;
+html {
+  position: relative;
+  min-height: 100%;
 }
 
+.footer {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  /* Set the fixed height of the footer here */
+  height: 30px;
+  background-color: #f5f5f5;
+}
+
+.footer .text-muted {
+	margin: 7px 0;
+	font-size: small;
+}
 
 

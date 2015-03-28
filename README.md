@@ -2,6 +2,20 @@
 
 Malcom is a tool designed to analyze a system's network communication using graphical representations of network traffic, and cross-reference them with known malware sources. This comes handy when analyzing how certain malware species try to communicate with the outside world.
 
+- [What is Malcom?](#what-is-malcom)
+- [Quick how-to](#quick-how-to)
+- [Installation](#installation)
+ - [Docker instance](#docker-instance)
+ - [Quick note on TLS interception](#quick-note-on-tls-interception) 
+ - [Environment](#environment) 
+ - [Feeds](#feeds)
+- [Technical specs](#technical-specs)
+- [Roadmap](#roadmap)
+- [Disclaimer](#disclaimer)
+- [License](#license)
+
+# What is Malcom?
+
 Malcom can help you: 
 
 * detect central command and control (C&C) servers
@@ -34,41 +48,62 @@ Dataset view (filtered to only show IPs)
 
 ## Installation
 
-Malcom is written in python. Provided you have the necessary libraries, you should be able to run it on any platform.
+Malcom is written in python. Provided you have the necessary libraries, you should be able to run it on any platform. I highly recommend the use of python virtual environments (`virtualenv`) so as not to mess up your system libraries.
 
 The following was tested on Ubuntu server 14.04 LTS:
 
 * Install `git`, `python` and `libevent` libs, `mongodb`, `redis`, and other dependencies
 
-        apt-get install git python-dev libevent-dev mongodb libxml2-dev libxslt-dev zlib1g-dev redis-server libffi-dev libssl-dev libadns1-dev
+        $ apt-get install build-essential git python-dev libevent-dev mongodb libxml2-dev libxslt-dev zlib1g-dev redis-server libffi-dev libssl-dev python-virtualenv
 
-* Get `virtualenv` and `scapy`
+* Get `scapy`:
 
-        wget https://pypi.python.org/packages/source/v/virtualenv/virtualenv-1.11.5.tar.gz
-        wget http://www.secdev.org/projects/scapy/files/scapy-latest.tar.gz
-        tar xvzf virtualenv-1.11.5.tar.gz
-        tar xvzf scapy-latest.tar.gz
+        $ wget http://www.secdev.org/projects/scapy/files/scapy-latest.tar.gz
+        $ tar xvzf scapy-latest.tar.gz
 
-* Clone the Git repo
+* Clone the Git repo:
 
-        git clone https://github.com/tomchop/malcom.git malcom
+        $ git clone https://github.com/tomchop/malcom.git malcom
 
-* Create your virtualenv and activate it
+* Create your virtualenv and activate it:
 
-        cd malcom
-        python ../virtualenv-1.11.5/virtualenv.py env-malcom
-        source env-malcom/bin/activate
+        $ cd malcom
+        $ virtualenv env-malcom
+        $ source env-malcom/bin/activate
 
-* Install scapy, without elevating your privs to root
+* Install scapy (if you're ina virtual environment, don't  `sudo`):
 
-        cd ../scapy-2.1.0
-        python setup.py install
+        $ cd ../scapy-2.1.0
+        $ python setup.py install
 
-* still from your virtualenv, install necessary python packages
+* Still from your virtualenv, install necessary python packages from the `requirements.txt` file:
 
-        pip install flask pymongo pygeoip geoip2 gevent-websocket python-dateutil netifaces lxml twisted pyopenssl redis service_identity flask-login pycrypto passlib dnspython
+        $ cd ../malcom
+        $ pip install -r requirements.txt
+
+* For IP geolocation to work, you need to download the [Maxmind](http://dev.maxmind.com/) database and extract the file to the `malcom/Malcom/auxiliary/geoIP` directory. You can get Maxmind's free (and thus more or less accurate) database from the following link: http://dev.maxmind.com/geoip/geoip2/geolite2/:
+
+        $ cd malcom/Malcom/auxiliary/geoIP
+        $ wget http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.mmdb.gz
+        $ gunzip -d GeoLite2-City.mmdb.gz
+        $ mv GeoLite2-City.mmdb GeoIP2-City.mmdb
 
 * Launch the webserver from the `malcom` directory using `./malcom.py`. Check `./malcom.py --help` for listen interface and ports.
+  * For starters, you can copy the `malcom.conf.example` file to `malcom.conf` and run `./malcom.py -c malcom.conf`
+
+### Docker instance
+
+The quickest way to get you started is to pull the Docker image from the [public docker repo](https://registry.hub.docker.com/u/tomchop/malcom/). **To pull the automatic Docker build for the latest GitHub commit**, use `tomchop/malcom-automatic` instead of `tomchop/malcom`.
+
+        $ sudo docker pull tomchop/malcom
+        $ sudo docker run -P -d --name malcom tomchop/malcom
+        
+Connect to your malcom instance by checking the port on the docker file.
+
+        $ sudo docker port malcom
+        8080/tcp -> 0.0.0.0:49155
+
+Connecting to `http://<docker_host>:49155/` should get you started.
 
 ### Quick note on TLS interception
 
@@ -89,7 +124,7 @@ As long as it's getting layer-3 network data, Malcom can be deployed anywhere. A
 
 ### Feeds
 
-To launch an instance of Malcom that ONLY fetches information from feeds, run Malcom with the `--feeds` option.
+To launch an instance of Malcom that ONLY fetches information from feeds, run Malcom with the `--feeds` option or tweak the configuration file.
 
 Your database should be populated automatically. If you can dig into the code, adding feeds is pretty straightforward (assuming you're generating `Evil` objects). You can find an example feed in `/feeds/zeustracker`. A more detailed tutorial is [available here](https://github.com/tomchop/malcom/wiki/Adding-feeds-to-Malcom).
 
